@@ -127,7 +127,7 @@ async def ask_general_manager(
                 f"\n\n[LIVE REDIS IN-SEASON INTELLIGENCE - UPDATED DAILY]:\n"
                 f"- Season Phase: IN-SEASON (Draft complete, Week {active_week}). "
                 f"Focus on weekly lineup optimization, waiver wire pickups, trade evaluation, and matchup analysis.\n"
-                f"- League Format: 12-team Full PPR starting 3 WRs + 1 FLEX. 36 WRs start weekly—WR depth is critical.\n"
+                f"- League Format: {settings.LEAGUE_SIZE}-team Full PPR starting 3 WRs + 1 FLEX. {settings.NUM_WR_SLOTS * settings.LEAGUE_SIZE} WRs start weekly—WR depth is critical.\n"
                 f"- Top Available VORP Targets (Free Agents): {top_vorp}\n"
                 f"- Active Injury Watchlist: {top_inj}\n"
             )
@@ -201,7 +201,7 @@ async def ask_general_manager(
         # In-season mock fallback
         fallback_msg = (
             "**Waiver Wire Verdict**: Check the available free agent pool for high-upside pickups at WR and RB.\n\n"
-            "- **The Case**: In your 12-team Full PPR league starting 3 WRs + 1 FLEX, waiver wire depth at wide receiver "
+            "- **The Case**: In your {settings.LEAGUE_SIZE}-team Full PPR league starting 3 WRs + 1 FLEX, waiver wire depth at wide receiver "
             "is critical. Monitor snap share increases and target share trends to identify breakout candidates before "
             "your league-mates claim them.\n"
             "- **Key Action**: Review your bench for droppable assets (players with <30% snap share) and prioritize "
@@ -262,7 +262,7 @@ async def ask_general_manager(
             logger.error("Direct fallback also failed: %s", str(e2))
             response_text = (
                 "**In-Season Advisory**: Review your roster for lineup optimization and waiver opportunities.\n\n"
-                "- **Weekly Focus**: In your 12-team Full PPR league (3 WR + 1 FLEX), monitor practice reports for "
+                "- **Weekly Focus**: In your {settings.LEAGUE_SIZE}-team Full PPR league (3 WR + 1 FLEX), monitor practice reports for "
                 "injury designations that create opportunity upgrades. Target snap share increases >15% week-over-week "
                 "as the strongest predictor of emerging waiver value.\n"
                 "- **Action Items**: Check your matchup projections, review the free agent pool for high-volume targets, "
@@ -274,7 +274,7 @@ async def ask_general_manager(
     if not response_text:
         response_text = (
             "**In-Season Advisory**: Review your roster for lineup optimization and waiver opportunities.\n\n"
-            "- **Weekly Focus**: In your 12-team Full PPR league (3 WR + 1 FLEX), monitor practice reports for "
+            "- **Weekly Focus**: In your {settings.LEAGUE_SIZE}-team Full PPR league (3 WR + 1 FLEX), monitor practice reports for "
             "injury designations that create opportunity upgrades. Target snap share increases >15% week-over-week "
             "as the strongest predictor of emerging waiver value.\n"
             "- **Action Items**: Check your matchup projections, review the free agent pool for high-volume targets, "

@@ -29,10 +29,9 @@ class LLMCache:
 
     @classmethod
     async def get(cls, cache_key: str) -> Optional[str]:
-        """Retrieves cached response from Redis if present."""
-        r = await get_redis()
-        val = await r.get(cache_key)
+        """Retrieves cached response from Redis if present. Fail-open: returns None on any error."""
         try:
+            r = await get_redis()
             val = await r.get(cache_key)
             if val:
                 await r.incr("llm_cache_hits")

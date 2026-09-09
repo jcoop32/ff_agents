@@ -6,17 +6,32 @@ No LLM involvement — calculated using strictly deterministic mathematical algo
 from typing import List, Dict, Any
 import numpy as np
 
+from app.core.config import settings
+
+
+def default_baselines(league_size: int = None) -> Dict[str, int]:
+    """
+    Derives positional replacement baselines from league settings instead of
+    hardcoded 12-team values. Baseline rank = (starters x teams) + offset,
+    where the offset reserves room for FLEX-share (RB/WR) or a plain
+    replacement (+1) at the other positions.
+    """
+    n = league_size or settings.LEAGUE_SIZE
+    starters = {
+        "QB": 1,
+        "RB": 2,
+        "WR": settings.NUM_WR_SLOTS,
+        "TE": 1,
+        "K": 1,
+        "DST": 1,
+    }
+    flex_share = {"RB": 2, "WR": 2}  # FLEX spot draws from the RB/WR/TE pool
+    return {pos: starters[pos] * n + flex_share.get(pos, 1) for pos in starters}
+
 
 # Positional replacement baselines tuned for "WA minus Josh"
-# 12-team league, 1QB, 2RB, 3WR, 1TE, 1FLEX, 1K, 1DST
-DEFAULT_BASELINES = {
-    "QB": 13,   # 12 starters + 1 replacement
-    "RB": 26,   # 24 starters + 2 flex share
-    "WR": 38,   # 36 starters + 2 flex share
-    "TE": 13,   # 12 starters + 1 replacement
-    "K": 13,    # 12 starters + 1 replacement
-    "DST": 13,  # 12 starters + 1 replacement
-}
+# (derived from settings: e.g. 10-team league, 1QB, 2RB, 3WR, 1TE, 1FLEX, 1K, 1DST)
+DEFAULT_BASELINES = default_baselines()
 
 
 class VORPEngine:
@@ -42,7 +57,7 @@ class VORPEngine:
             reverse=True
         )
 
-        cutoff_idx = (baseline_rank or DEFAULT_BASELINES.get(position.upper(), 13)) - 1
+        cutoff_idx = (baseline_rank or default_baselines().get(position.upper(), settings.LEAGUE_SIZE + 1)) - 1
         cutoff_idx = max(0, min(cutoff_idx, len(sorted_players) - 1))
         baseline_points = float(sorted_players[cutoff_idx].get("projected_points", 0.0))
 
@@ -70,7 +85,7 @@ class VORPEngine:
         all_enriched = []
 
         for pos, players in players_by_pos.items():
-            rank_cutoff = baselines.get(pos.upper(), 13)
+            rank_cutoff = baselines.get(pos.upper(), settings.LEAGUE_SIZE + 1)
             enriched_pos = VORPEngine.calculate_vorp_for_position(players, pos, rank_cutoff)
             all_enriched.extend(enriched_pos)
 

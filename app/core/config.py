@@ -100,6 +100,26 @@ class Settings(BaseSettings):
         "http://127.0.0.1:8000",
     ]
     # Allowed Tailscale and internal IP regex/prefixes will be handled dynamically in CORS middleware
+    CORS_ALLOWED_ORIGINS: str = Field(
+        default="http://localhost,http://localhost:3000,http://localhost:8000,"
+                "http://127.0.0.1,http://127.0.0.1:3000,http://127.0.0.1:8000",
+        description="Comma-separated exact-match CORS allowlist for the Tailscale middleware. "
+                    "List Tailscale node origins (e.g. http://100.x.y.z:3000) explicitly; "
+                    "arbitrary origins are never reflected."
+    )
+
+    # API Security
+    API_TOKEN: str = Field(
+        default="",
+        description="Bearer token required on all /api routes except /api/health "
+                    "(Authorization: Bearer <token>). Leave empty ONLY for local dev; "
+                    "an unmissable warning is logged at startup when unset."
+    )
+
+    @property
+    def cors_allowed_origin_list(self) -> List[str]:
+        """Parses CORS_ALLOWED_ORIGINS into an exact-match allowlist."""
+        return [o.strip() for o in (self.CORS_ALLOWED_ORIGINS or "").split(",") if o.strip()]
 
 
 settings = Settings()

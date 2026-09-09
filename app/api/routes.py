@@ -4,10 +4,12 @@ FastAPI route handlers for chat, news ingestion, budget monitoring, and health p
 
 import json
 import logging
+import secrets
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
 import fastapi
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect, WebSocketException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm.attributes import flag_modified
@@ -29,7 +31,38 @@ from app.models.stats import NewsItem
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api", tags=["Gridiron AI"])
+security = HTTPBearer(auto_error=False)
+
+# Routes that stay public even when API_TOKEN is configured (K8s probes, etc.)
+PUBLIC_PATHS = {"/api/health", "/api/ready"}
+
+
+async def verify_api_token(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> None:
+    """
+    Enforces API_TOKEN (Authorization: Bearer <token>) on all API routes.
+    Fail-open ONLY when no API_TOKEN is configured (local dev); a loud
+    warning is logged at startup in that case (see main.py lifespan).
+    """
+    if not settings.API_TOKEN:
+        return
+    if request.url.path in PUBLIC_PATHS:
+        return
+    token = credentials.credentials if credentials else None
+    if token and secrets.compare_digest(token, settings.API_TOKEN):
+        return
+    if request.scope["type"] == "websocket":
+        raise WebSocketException(code=4401)
+    raise HTTPException(
+        status_code=401,
+        detail="Missing or invalid API token",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+router = APIRouter(prefix="/api", tags=["Gridiron AI"], dependencies=[Depends(verify_api_token)])
 
 
 class ChatRequest(BaseModel):
@@ -644,6 +677,7 @@ async def apply_recommended_lineup(req: Optional[ApplyLineupRequest] = None) -> 
         # Roster optimization is stored locally in Gridiron AI for simulation models, Discord bot alerts,
         # and weekly projections.
         message = f"Optimized lineup saved to Gridiron AI Strategy Board! Projected: {opt_data['optimal_projected_total']:.1f} pts."
+        active_swaps = [r for r in opt_data.get("recommendations", []) if r.get("action") == "SWAP"]
         if active_swaps:
             swap_names = [f"{s.get('player_in')} into {s.get('slot')} (over {s.get('player_out')})" for s in active_swaps]
             message = (
@@ -666,7 +700,7 @@ async def apply_recommended_lineup(req: Optional[ApplyLineupRequest] = None) -> 
 @router.get("/league/standings")
 async def get_league_standings() -> Dict[str, Any]:
     """
-    Returns standings and basic record data for all 12 teams in the league.
+    Returns standings and basic record data for all teams in the league.
     Leverages Redis cache (<2ms) and PostgreSQL (<5ms) before ESPN network fallback.
     """
     cache_key = "cache:league:standings"
@@ -788,17 +822,23 @@ async def get_draft_projections(
         p_res = await session.execute(query)
         players = p_res.scalars().all()
 
-        # Positional baseline replacement points (QB13, RB26, WR38, TE13)
+        # Positional baseline replacement points, derived from league settings
+        # (e.g. 10-team: QB11, RB22, WR32, TE11)
         pos_players = {}
         for p in players:
             pos_players.setdefault(p.position, []).append(p.projected_points)
 
-        baselines = {
-            "QB": pos_players.get("QB", [0])[min(12, len(pos_players.get("QB", [0])) - 1)] if pos_players.get("QB") else 0.0,
-            "RB": pos_players.get("RB", [0])[min(25, len(pos_players.get("RB", [0])) - 1)] if pos_players.get("RB") else 0.0,
-            "WR": pos_players.get("WR", [0])[min(37, len(pos_players.get("WR", [0])) - 1)] if pos_players.get("WR") else 0.0,
-            "TE": pos_players.get("TE", [0])[min(12, len(pos_players.get("TE", [0])) - 1)] if pos_players.get("TE") else 0.0,
+        n_teams = settings.LEAGUE_SIZE
+        baseline_rank = {
+            "QB": n_teams + 1,
+            "RB": 2 * n_teams + 2,
+            "WR": settings.NUM_WR_SLOTS * n_teams + 2,
+            "TE": n_teams + 1,
         }
+        baselines = {}
+        for pos, rank in baseline_rank.items():
+            pool = pos_players.get(pos)
+            baselines[pos] = pool[min(rank - 1, len(pool) - 1)] if pool else 0.0
 
         output = []
         for p in players:
@@ -839,17 +879,31 @@ async def get_draft_projections(
 async def get_draft_live() -> Dict[str, Any]:
     """
     Returns active ESPN live draft status, current pick, turn wrap, and countdown to Team Cooper.
+    Snake math is derived from settings.LEAGUE_SIZE (not hardcoded 12-team values).
     """
+    n = settings.LEAGUE_SIZE
+    user_slot = 2  # Team Cooper's draft slot
+    starter_slots = (
+        1  # QB
+        + 2  # RB
+        + settings.NUM_WR_SLOTS
+        + 1  # TE
+        + (1 if settings.HAS_FLEX else 0)
+        + 1  # K
+        + 1  # D/ST
+    )
+    draft_rounds = starter_slots + settings.BENCH_SLOTS
+
     status = await DraftPrepService.get_live_draft_status()
     active_pick = status.get("current_pick", 1)
-    active_round = ((active_pick - 1) // 12) + 1
-    pick_in_round = ((active_pick - 1) % 12) + 1
+    active_round = ((active_pick - 1) // n) + 1
+    pick_in_round = ((active_pick - 1) % n) + 1
     is_odd = active_round % 2 != 0
-    active_team = pick_in_round if is_odd else (13 - pick_in_round)
+    active_team = pick_in_round if is_odd else (n + 1 - pick_in_round)
 
     user_picks = []
-    for r in range(1, 17):
-        user_picks.append((r - 1) * 12 + (2 if r % 2 != 0 else 11))
+    for r in range(1, draft_rounds + 1):
+        user_picks.append((r - 1) * n + (user_slot if r % 2 != 0 else n + 1 - user_slot))
     user_picks.sort()
     next_user_pick = next((p for p in user_picks if p >= active_pick), active_pick)
     picks_until = max(0, next_user_pick - active_pick)
@@ -859,7 +913,7 @@ async def get_draft_live() -> Dict[str, Any]:
         "active_round": active_round,
         "pick_in_round": pick_in_round,
         "active_team_slot": active_team,
-        "is_user_turn": (active_team == 2),
+        "is_user_turn": (active_team == user_slot),
         "next_user_pick": next_user_pick,
         "picks_until_turn": picks_until
     }
