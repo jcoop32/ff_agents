@@ -23,6 +23,15 @@ async def lifespan(app: FastAPI):
     """Lifecycle manager for startup and shutdown procedures."""
     logger.info("Starting up Gridiron AI multi-agent platform...")
 
+    if not settings.API_TOKEN:
+        logger.warning(
+            "\n" + "!" * 78 + "\n"
+            "!!! API_TOKEN is NOT set - the API is running WITHOUT authentication. !!!\n"
+            "!!! Anyone who can reach this server can execute roster moves and   !!!\n"
+            "!!! spend your LLM quota. Set the API_TOKEN environment variable.  !!!\n"
+            + "!" * 78
+        )
+
     # Initialize Redis connection pool
     try:
         await init_redis_pool()
@@ -92,25 +101,20 @@ app = FastAPI(
 
 class TailscaleCORSMiddleware(BaseHTTPMiddleware):
     """
-    Dynamically permits CORS requests originating from any Tailscale mesh node
-    (100.*.*.*), internal Kubernetes Pod CIDRs (10.*.*.*), or localhost.
+    Applies CORS headers ONLY for origins on the exact-match allowlist
+    (settings.CORS_ALLOWED_ORIGINS). Never reflects arbitrary origins:
+    substring matches (e.g. "localhost" inside an attacker domain) and
+    unlisted Tailscale/IP ranges are rejected.
     """
     async def dispatch(self, request: Request, call_next):
         origin = request.headers.get("origin")
         response = await call_next(request)
 
-        if origin:
-            # Check for Tailscale 100.x range or localhost
-            if (
-                origin.startswith("http://100.")
-                or origin.startswith("https://100.")
-                or "localhost" in origin
-                or "127.0.0.1" in origin
-            ):
-                response.headers["Access-Control-Allow-Origin"] = origin
-                response.headers["Access-Control-Allow-Credentials"] = "true"
-                response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-                response.headers["Access-Control-Allow-Headers"] = "*"
+        if origin and origin in set(settings.cors_allowed_origin_list):
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "*"
 
         return response
 

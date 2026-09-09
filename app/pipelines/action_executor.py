@@ -74,7 +74,9 @@ class ActionExecutor:
             action.execution_result = exec_result
 
             if exec_result.get("success"):
-                action.status = "EXECUTED"
+                # A "simulated" execution never touched ESPN: stamp it honestly
+                # so the audit trail distinguishes simulation from reality.
+                action.status = "SIMULATED" if exec_result.get("simulated") else "EXECUTED"
             else:
                 action.status = "FAILED"
 
@@ -83,10 +85,10 @@ class ActionExecutor:
             updated_dict = action.to_dict()
 
         # Dispatch confirmation briefing
-        status_emoji = "✅" if updated_dict["status"] == "EXECUTED" else "❌"
+        status_emoji = {"EXECUTED": "✅", "SIMULATED": "🔷"}.get(updated_dict["status"], "❌")
         await NotificationDispatcher.dispatch_briefing(
             briefing_type="ACTION_RESULT",
-            urgency="HIGH" if updated_dict["status"] == "EXECUTED" else "CRITICAL",
+            urgency="HIGH" if updated_dict["status"] in ("EXECUTED", "SIMULATED") else "CRITICAL",
             title=f"{status_emoji} Action {updated_dict['status']}: {updated_dict['title']}",
             content=(
                 f"**Action Type**: {updated_dict['action_type']}\n\n"

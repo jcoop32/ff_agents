@@ -25,6 +25,33 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
+def is_owner_id(user_id: int) -> bool:
+    """True only for the configured bot owner."""
+    return bool(settings.DISCORD_USER_ID) and str(user_id) == str(settings.DISCORD_USER_ID)
+
+
+async def deny_non_owner_interaction(interaction: discord.Interaction) -> bool:
+    """
+    Replies ephemerally to non-owner interactions.
+    Returns True when the caller should abort (denied).
+    """
+    if is_owner_id(interaction.user.id):
+        return False
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(
+                "\u26d4 This bot only takes orders from its owner.", ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                "\u26d4 This bot only takes orders from its owner.", ephemeral=True
+            )
+    except Exception:
+        pass
+    return True
+
+
+
 class ActionApprovalView(discord.ui.View):
     """Interactive Discord UI View with Approve and Reject action buttons."""
     def __init__(self, action_id: int):
@@ -33,6 +60,8 @@ class ActionApprovalView(discord.ui.View):
 
     @discord.ui.button(label="Approve & Execute", style=discord.ButtonStyle.green, emoji="✅")
     async def approve_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if await deny_non_owner_interaction(interaction):
+            return
         await interaction.response.defer()
         from app.pipelines.action_executor import ActionExecutor
         try:
@@ -50,6 +79,8 @@ class ActionApprovalView(discord.ui.View):
 
     @discord.ui.button(label="Reject", style=discord.ButtonStyle.red, emoji="❌")
     async def reject_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if await deny_non_owner_interaction(interaction):
+            return
         await interaction.response.defer()
         from app.pipelines.action_executor import ActionExecutor
         try:
@@ -198,6 +229,10 @@ async def on_message(message: discord.Message):
     Mirrors the beloved Jarvis direct conversation experience.
     """
     if message.author == bot.user:
+        return
+
+    if not is_owner_id(message.author.id):
+        await message.channel.send("\u26d4 This bot only takes orders from its owner.")
         return
 
     content = message.content.strip()
@@ -457,6 +492,8 @@ async def proactive_alert_listener():
 @bot.tree.command(name="ask", description="Ask the General Manager any fantasy football question")
 @app_commands.describe(question="Your sit/start, waiver, or strategy question")
 async def slash_ask(interaction: discord.Interaction, question: str):
+    if await deny_non_owner_interaction(interaction):
+        return
     await interaction.response.defer(thinking=True)
 
     # Auto-track waiver target if user asks about a pickup
@@ -477,6 +514,8 @@ async def slash_ask(interaction: discord.Interaction, question: str):
 @bot.tree.command(name="lineup", description="Evaluate optimal sit/start lineup decisions for this week")
 @app_commands.describe(week="Fantasy week to optimize")
 async def slash_lineup(interaction: discord.Interaction, week: int = 1):
+    if await deny_non_owner_interaction(interaction):
+        return
     await interaction.response.defer(thinking=True)
     prompt = f"Optimize our starting lineup for Week {week} in 12-team full PPR (3-WR + 1-FLEX). Compare floor vs ceiling matchups."
     response = await ask_general_manager(prompt, active_week=week)
@@ -487,6 +526,8 @@ async def slash_lineup(interaction: discord.Interaction, week: int = 1):
 @bot.tree.command(name="trade", description="Analyze a proposed trade offer for value equity and lineup delta")
 @app_commands.describe(players_sent="Players you are giving up", players_received="Players you are getting")
 async def slash_trade(interaction: discord.Interaction, players_sent: str, players_received: str):
+    if await deny_non_owner_interaction(interaction):
+        return
     await interaction.response.defer(thinking=True)
     prompt = f"Evaluate this trade for Team Cooper in 12-team PPR (3-WR + FLEX): Giving [{players_sent}], Receiving [{players_received}]."
     response = await ask_general_manager(prompt)
@@ -497,6 +538,8 @@ async def slash_trade(interaction: discord.Interaction, players_sent: str, playe
 @bot.tree.command(name="draft", description="Get live draft recommendation or tier-cliff analysis")
 @app_commands.describe(position="Position to evaluate or target")
 async def slash_draft(interaction: discord.Interaction, position: str = "ALL"):
+    if await deny_non_owner_interaction(interaction):
+        return
     await interaction.response.defer(thinking=True)
     prompt = f"Provide live draft room recommendation at position '{position}'. Identify active tier cliffs and VORP values."
     response = await ask_general_manager(prompt)
@@ -507,6 +550,8 @@ async def slash_draft(interaction: discord.Interaction, position: str = "ALL"):
 @bot.tree.command(name="waiver", description="Add a player to your target watchlist or evaluate waiver pool")
 @app_commands.describe(target_player="Player name to add to priority watchlist")
 async def slash_waiver(interaction: discord.Interaction, target_player: str):
+    if await deny_non_owner_interaction(interaction):
+        return
     await interaction.response.defer()
     r = await get_redis()
     await r.sadd("user:waiver_targets", target_player.strip())
@@ -518,6 +563,8 @@ async def slash_waiver(interaction: discord.Interaction, target_player: str):
 
 @bot.tree.command(name="budget", description="Check remaining free-tier LLM API usage for today")
 async def slash_budget(interaction: discord.Interaction):
+    if await deny_non_owner_interaction(interaction):
+        return
     status = await RateLimiter.get_budget_status()
     embed = format_budget_embed(status)
     await interaction.response.send_message(embed=embed)
@@ -525,6 +572,8 @@ async def slash_budget(interaction: discord.Interaction):
 
 @bot.tree.command(name="activity", description="View recent transactions and impact in WA minus Josh")
 async def slash_activity(interaction: discord.Interaction):
+    if await deny_non_owner_interaction(interaction):
+        return
     await interaction.response.defer()
     txs = await get_recent_transactions(hours=48)
     if not txs:
@@ -545,6 +594,8 @@ async def slash_activity(interaction: discord.Interaction):
 @bot.tree.command(name="track", description="Spawn an autonomous background surveillance job for an NFL player")
 @app_commands.describe(player_name="NFL player to monitor", frequency_minutes="Polling frequency in minutes (e.g. 30, 60)")
 async def slash_track(interaction: discord.Interaction, player_name: str, frequency_minutes: int = 60):
+    if await deny_non_owner_interaction(interaction):
+        return
     await interaction.response.defer()
     from app.pipelines.scheduler_api import SchedulerAPI
     try:
@@ -574,6 +625,8 @@ async def slash_track(interaction: discord.Interaction, player_name: str, freque
 
 @bot.tree.command(name="briefings", description="View the latest autonomous intelligence briefings from the agents")
 async def slash_briefings(interaction: discord.Interaction):
+    if await deny_non_owner_interaction(interaction):
+        return
     await interaction.response.defer()
     from app.core.database import AsyncSessionLocal
     from app.models.agent_briefing import AgentBriefing
@@ -606,6 +659,8 @@ async def slash_briefings(interaction: discord.Interaction):
 
 @bot.tree.command(name="actions", description="View pending roster actions awaiting your approval")
 async def slash_actions(interaction: discord.Interaction):
+    if await deny_non_owner_interaction(interaction):
+        return
     await interaction.response.defer()
     from app.pipelines.action_executor import ActionExecutor
     try:
@@ -632,6 +687,8 @@ async def slash_actions(interaction: discord.Interaction):
 
 @bot.tree.command(name="test_alert", description="Test Jarvis 2.0 proactive outreach directly to your DMs and channel")
 async def slash_test_alert(interaction: discord.Interaction):
+    if await deny_non_owner_interaction(interaction):
+        return
     await interaction.response.defer(ephemeral=True)
     embed = discord.Embed(
         title="🏈 Proactive Outreach Pipeline Test",

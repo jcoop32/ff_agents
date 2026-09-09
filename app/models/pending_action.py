@@ -16,7 +16,8 @@ class PendingAction(Base):
     action_type = Column(String(32), index=True, nullable=False)
     # WAIVER_CLAIM, FREE_AGENT_ADD, LINEUP_SWAP, TRADE_PROPOSAL, IR_STASH, DROP_PLAYER
     status = Column(String(16), index=True, default="PENDING", nullable=False)
-    # PENDING, APPROVED, REJECTED, EXECUTED, FAILED, EXPIRED
+    # PENDING, APPROVED, REJECTED, EXECUTED, SIMULATED, FAILED, EXPIRED
+    # (SIMULATED = approved but ESPN cookies were absent, so nothing touched ESPN)
     urgency = Column(String(16), index=True, default="MEDIUM")
     # LOW, MEDIUM, HIGH, CRITICAL
     confidence_score = Column(Float, nullable=False, default=0.75)
