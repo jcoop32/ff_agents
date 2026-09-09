@@ -1,0 +1,59 @@
+# Python & Environments
+.venv/
+env/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Environment Variables & Secrets (CRITICAL)
+.env
+.env.*
+*.env
+!.env.example
+*.pem
+*.key
+*.cert
+*.crt
+*.pfx
+*.p12
+*.token
+
+# Kubernetes Secrets
+k8s/secrets.yaml
+k8s/secrets.yml
+k8s/*secret*.yaml
+k8s/*secret*.yml
+*secrets*.yaml
+*secrets*.yml
+!k8s/secrets-template.yaml
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/.env*.local
+frontend/.env*
+!frontend/.env.example
+frontend/out/
+frontend/build/
+
+# System & Editor
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Logs & Scratch
+*.log
+scratch/
+logs/

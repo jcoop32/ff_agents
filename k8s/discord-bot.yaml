@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: discord-bot-deployment
+  namespace: gridiron-ai
+  labels:
+    app: gridiron-discord-bot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gridiron-discord-bot
+  template:
+    metadata:
+      labels:
+        app: gridiron-discord-bot
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: node-5
+      containers:
+        - name: discord-bot
+          image: jcooper23/gridiron-ai:latest
+          imagePullPolicy: Always
+          command: ["python", "-m", "app.bot.discord_bot"]
+          env:
+            - name: REDIS_URL
+              value: redis://redis.gridiron-ai.svc.cluster.local:6379/0
+          envFrom:
+            - secretRef:
+                name: gridiron-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi

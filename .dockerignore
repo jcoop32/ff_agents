@@ -1,0 +1,25 @@
+.git
+.venv
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+node_modules
+frontend/node_modules
+frontend/.next
+scratch
+
+# Secrets and Environment files - NEVER copy into Docker image!
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.cert
+*.crt
+k8s/secrets.yaml
+k8s/secrets.yml
+k8s/*secret*.yaml
+k8s/*secret*.yml
+*secrets*.yaml
+*secrets*.yml

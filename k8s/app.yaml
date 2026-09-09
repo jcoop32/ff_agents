@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-deployment
+  namespace: gridiron-ai
+  labels:
+    app: gridiron-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gridiron-api
+  template:
+    metadata:
+      labels:
+        app: gridiron-api
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: node-5
+      containers:
+        - name: app
+          image: jcooper23/gridiron-ai:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: REDIS_URL
+              value: redis://redis.gridiron-ai.svc.cluster.local:6379/0
+          envFrom:
+            - secretRef:
+                name: gridiron-secrets
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1.5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gridiron-service
+  namespace: gridiron-ai
+spec:
+  type: NodePort
+  ports:
+    - port: 8000
+      targetPort: 8000
+      nodePort: 31080
+      name: http
+  selector:
+    app: gridiron-api
